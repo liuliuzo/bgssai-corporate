@@ -1,0 +1,19 @@
+@Library('bgssai') _
+
+pipeline {
+    agent any
+    options {
+        disableConcurrentBuilds()
+        timestamps()
+    }
+    stages {
+        stage('Stop studio') {
+            steps {
+                script {
+                    def profile = bgssaiResolveEnvironment(action: '关停', requireConfirm: false)
+                    bgssaiStopService(product: 'corporate', end: 'user', environment: profile)
+                }
+            }
+        }
+    }
+}

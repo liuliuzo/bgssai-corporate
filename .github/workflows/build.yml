@@ -1,0 +1,43 @@
+name: Build studio
+on:
+  pull_request:
+    branches: [develop]
+  push:
+    branches: [develop]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: bgssai-corporate-user/bgssai-corporate-user-react/package-lock.json
+      - name: Build studio
+        working-directory: bgssai-corporate-user/bgssai-corporate-user-react
+        run: |
+          npm ci
+          npm run build:deploy
+      - name: Package application and verify embedded assets
+        run: mvn -B -ntp verify
+      - name: Smoke test the packaged app
+        run: |
+          java -jar bgssai-corporate-user/bgssai-corporate-user/target/bgssai-corporate-user-*.jar --spring.profiles.active=dev > "$RUNNER_TEMP/corporate.log" 2>&1 &
+          app_pid=$!
+          trap 'kill "$app_pid" || true' EXIT
+          curl -fsS --retry-all-errors --retry 20 --retry-delay 1 http://localhost:8080/bgssai/health/readiness | jq -e '.status == "UP" and .service == "bgssai-corporate-user"'
+          curl -fsS http://localhost:8080/ | grep -q '<div id="root"'
+          curl -fsS http://localhost:8080/api/templates > "$RUNNER_TEMP/templates.json"
+          jq -e 'length > 0 and all(.[]; (.scenes | length) > 0)' "$RUNNER_TEMP/templates.json"
+          for image in $(jq -r '.[].scenes[].image' "$RUNNER_TEMP/templates.json" | sort -u); do
+            curl -fsS "http://localhost:8080$image" -o "$RUNNER_TEMP/scene.jpg"
+            file "$RUNNER_TEMP/scene.jpg" | grep -q 'JPEG image'
+          done
